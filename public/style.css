@@ -1,0 +1,50 @@
+:root{--bg:#efebe5;--fg:#2f3136;--muted:#8a857e;--panel:rgba(251,250,247,.9);--line:rgba(0,0,0,.08);--accent:#b8936a;--hover:rgba(0,0,0,.045)}
+body.night{--bg:#1c1b20;--fg:#ece8e1;--muted:#a49e95;--panel:rgba(36,35,40,.88);--line:rgba(255,255,255,.1);--accent:#d6ad5c;--hover:rgba(255,255,255,.06)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;-webkit-tap-highlight-color:transparent}
+#scene{position:fixed;inset:0;touch-action:none}
+#scene canvas{display:block}
+#topbar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:12px;padding:10px 14px;
+  padding-top:max(10px,env(safe-area-inset-top));background:transparent;z-index:10;pointer-events:none}
+#topbar>*{pointer-events:auto}
+.brand{font-weight:700;font-size:18px;display:flex;gap:8px;align-items:center;white-space:nowrap;letter-spacing:.5px}
+.logo{color:var(--accent)}
+.btc{background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.06);border-radius:20px;padding:5px 12px;font-size:14px;white-space:nowrap}
+.btc b{color:var(--fg)}
+.up{color:#5fa67c}.down{color:#d2685a}
+.actions{margin-left:auto;display:flex;gap:8px}
+button{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.06);padding:7px 12px;font-size:14px;cursor:pointer;font-family:inherit}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+#demoBanner{position:fixed;top:58px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--fg);border:1px solid var(--line);padding:6px 14px;border-radius:16px;font-size:13px;z-index:10;white-space:nowrap}
+#panel{position:fixed;right:12px;top:64px;bottom:12px;width:300px;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,.08);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;flex-direction:column;z-index:9;transition:transform .25s}
+#panel.hidden{transform:translateX(calc(100% + 20px))}
+.panel-head{display:flex;align-items:baseline;justify-content:space-between;padding:12px 14px 6px}
+.panel-head h2{margin:0;font-size:16px}
+#summary{font-size:12px;opacity:.75}
+#botList{list-style:none;margin:0;padding:4px 8px;overflow-y:auto;flex:1}
+#botList li{display:grid;grid-template-columns:14px 1fr auto;gap:4px 10px;align-items:center;padding:9px 8px;border-radius:10px;cursor:pointer}
+#botList li:hover,#botList li.sel{background:var(--hover)}
+.dot{width:12px;height:12px;border-radius:50%;grid-row:span 2}
+.bname{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brole{font-weight:400;color:var(--muted);font-size:12px;margin-left:6px}
+.bstatus{font-size:12px;padding:2px 9px;border-radius:999px;color:#fff;font-weight:600;white-space:nowrap}
+.btask{grid-column:2/4;font-size:12px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-top:1px solid var(--line);font-size:11px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.panel-foot{font-size:11px;opacity:.6;padding:6px 14px 10px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--panel);color:var(--fg);border:1px solid var(--line);box-shadow:0 4px 16px rgba(0,0,0,.1);padding:8px 14px;border-radius:12px;font-size:13px;z-index:12}
+@media (max-width:760px){
+  .brand{font-size:15px}
+  #title{max-width:34vw;overflow:hidden;text-overflow:ellipsis}
+  .btc{font-size:12px;padding:4px 9px}
+  #topbar{flex-wrap:wrap;gap:8px}
+  .actions{margin-left:0;width:100%}
+  .actions button{flex:1;padding:8px 6px;font-size:13px}
+  #demoBanner{top:100px;font-size:12px}
+  #panel{left:8px;right:8px;top:auto;bottom:8px;width:auto;height:38vh;padding-bottom:env(safe-area-inset-bottom)}
+  #panel.hidden{transform:translateY(calc(100% + 20px))}
+}

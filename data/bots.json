@@ -1,0 +1,9 @@
+{
+  "bots": [
+    { "id": "grok", "name": "Grok Bot", "role": "总监/调度", "color": "#f5a623", "zone": "director", "room": "director" },
+    { "id": "secretary", "name": "秘书", "role": "秘书", "color": "#e94e77", "zone": "desk", "room": "secretary" },
+    { "id": "designer", "name": "设计师", "role": "设计师", "color": "#9b59b6", "zone": "desk", "room": "design" },
+    { "id": "admin", "name": "Admin", "role": "行政", "color": "#4a90e2", "zone": "desk", "room": "admin" },
+    { "id": "purchasing", "name": "采购", "role": "采购", "color": "#50c878", "zone": "desk", "room": "purchasing" }
+  ]
+}

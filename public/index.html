@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#efebe5">
+<meta name="referrer" content="no-referrer">
+<title>AI 团队办公室</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div id="scene"></div>
+<header id="topbar">
+  <div class="brand"><span class="logo">◆</span><span id="title">AI 团队办公室</span></div>
+  <div id="btc" class="btc" title="BTC/USD">BTC <b id="btcPrice">--</b> <span id="btcChg"></span></div>
+  <div class="actions">
+    <button id="btnDayNight" type="button" title="昼夜切换">🌓 自动</button>
+    <button id="btnDemo" type="button" title="演示模式：本地随机切换状态，不写入服务器">▶ 演示</button>
+    <button id="btnPanel" type="button" title="团队面板">☰ 团队</button>
+  </div>
+</header>
+<div id="demoBanner" hidden>演示模式中 · 状态为本地随机模拟，不影响真实数据</div>
+<aside id="panel">
+  <div class="panel-head">
+    <h2>团队状态</h2>
+    <span id="summary"></span>
+  </div>
+  <ul id="botList"></ul>
+  <div class="legend" id="legend"></div>
+  <div class="panel-foot"><span id="conn">连接中…</span> · <span id="updated"></span></div>
+</aside>
+<div id="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

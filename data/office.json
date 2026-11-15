@@ -1,0 +1,21 @@
+{
+  "title": "AI 团队办公室",
+  "boss": { "name": "Eldon", "title": "老板", "color": "#c0392b" },
+  "rooms": {
+    "boss": "老板办公室",
+    "director": "总监室",
+    "meeting": "会议室",
+    "secretary": "秘书室",
+    "design": "设计部",
+    "admin": "行政部",
+    "purchasing": "采购部",
+    "spare1": "备用房 1",
+    "spare2": "备用房 2",
+    "print": "印刷房",
+    "craft": "手工房",
+    "store": "储物间",
+    "tea": "茶水间",
+    "lounge": "休息区"
+  },
+  "npcs": { "print": 3, "craft": 6, "store": 2 }
+}

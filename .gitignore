@@ -1,0 +1,21 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+data/tokens.json
+SECRETS-*
+*.pem
+*.key
+.office-report
+# runtime
+data/state.json
+data/*.tmp*
+logs/
+*.log
+*.pid
+# build / local
+node_modules/
+screenshots/
+*.bak
+*.tgz
+.DS_Store
