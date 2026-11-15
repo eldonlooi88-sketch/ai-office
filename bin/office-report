@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 用法: office-report <bot> <状态> "<任务描述>"
 # 配置: 环境变量 OFFICE_URL / OFFICE_TOKEN（或 OFFICE_TOKEN_<BOT>），或 ~/.office-report 文件:
-#   OFFICE_URL=https://xxx.trycloudflare.com
+#   OFFICE_URL=https://ai-office-vk1v.onrender.com
 #   OFFICE_TOKEN_CODEX=ofc_xxx      # 每个 Bot 一个 Token
 set -euo pipefail
 CONF="${OFFICE_REPORT_CONFIG:-$HOME/.office-report}"
@@ -17,7 +17,7 @@ if [ $# -lt 2 ]; then
   exit 2
 fi
 BOT="$1"; STATUS="$2"; TASK="${3:-}"
-URL="${OFFICE_URL:-http://127.0.0.1:8787}"
+URL="${OFFICE_URL:-https://ai-office-vk1v.onrender.com}"
 VAR="OFFICE_TOKEN_$(echo "$BOT" | tr '[:lower:]-' '[:upper:]_')"
 TOKEN="${!VAR:-${OFFICE_TOKEN:-}}"
 [ -z "$TOKEN" ] && { echo "缺少 Token：请设置 $VAR 或 OFFICE_TOKEN" >&2; exit 2; }

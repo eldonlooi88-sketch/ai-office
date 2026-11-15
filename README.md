@@ -76,7 +76,7 @@ office-report purchasing idle
 
 配置写在 `~/.office-report`（建议 `chmod 600`），或用环境变量：
 ```
-OFFICE_URL=https://你的公网地址
+OFFICE_URL=https://ai-office-vk1v.onrender.com
 OFFICE_TOKEN_GROK=ofc_xxx
 OFFICE_TOKEN_SECRETARY=ofc_xxx
 # 或者单个 Bot 机器上只设 OFFICE_TOKEN=ofc_xxx
@@ -106,7 +106,21 @@ curl -X POST "$OFFICE_URL/api/report" \
 - 位于隧道/反代之后时，仅信任来自本机的 `CF-Connecting-IP` / `X-Forwarded-For`。
 - data/ 不在静态目录内，静态服务拒绝路径穿越与隐藏文件。
 
-## 运行与公网访问
+## 在线地址（Render）
+- 公网地址：**https://ai-office-vk1v.onrender.com**
+- 代码仓库：https://github.com/eldonlooi88-sketch/ai-office （推送到 `main` 会自动重新部署）
+- Render 服务：ai-office（Free 套餐，新加坡区），构建 `npm ci --omit=dev`，启动 `node server.js`，健康检查 `/healthz`
+- 环境变量：
+  - `OFFICE_TOKEN_HASHES`：各 Bot Token 的 SHA-256 哈希 JSON（不是明文 Token）。在本机执行 `node bin/office-admin.js env-hashes` 生成，粘贴到 Render → Environment。
+  - `NODE_ENV=production`、`PROXY_MODE=render`、`TRUST_PROXY=1`、`HOST=0.0.0.0`（`PORT` 由 Render 自动提供）
+- 新增岗位 / 轮换 Token：本机 `office-admin add/rotate` 后，把 `bots.json` 提交推送，并用 `env-hashes` 的新输出更新 Render 的 `OFFICE_TOKEN_HASHES`（保存后服务会重启）。
+- Free 套餐注意：
+  - 15 分钟无访问会休眠，下次打开需等约 30–60 秒唤醒（office-report 第一次上报可能较慢）。
+  - 文件系统是临时的：重启 / 重新部署 / 休眠唤醒后，`state.json` 里的状态会清空（所有 Bot 显示空闲，直到下次上报）。名单与房间配置在仓库里，不受影响。
+  - 需要持久保存状态请升级付费套餐并挂载 Persistent Disk（设置 `DATA_DIR` 指向磁盘并放入 bots.json / office.json）。
+- `data/tokens.json`、`.env`、`SECRETS-*` 均在 .gitignore 中，不会进入仓库；云端只使用哈希。
+
+## 本机运行
 ```bash
 ./start.sh                 # 只启动服务（127.0.0.1:8787）
 TUNNEL=1 ./start.sh        # 同时启动 Cloudflare 快速隧道，网址见 logs/tunnel.log

@@ -244,14 +244,15 @@ async function fetchBtc() {
     const d = (await fetchJSON('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin'))[0];
     return { price: d.current_price, change24h: d.price_change_percentage_24h, high24h: d.high_24h, low24h: d.low_24h, source: 'CoinGecko' };
   } catch (e) {
-    try {
+    try { // 备用 1：Kraken（含 24h 涨跌）
+      const d = await fetchJSON('https://api.kraken.com/0/public/Ticker?pair=XBTUSD');
+      const t = Object.values(d.result || {})[0]; const price = Number(t.c[0]), open = Number(t.o);
+      if (!Number.isFinite(price)) throw new Error('bad');
+      return { price, change24h: open ? (price - open) / open * 100 : null, high24h: Number(t.h[1]), low24h: Number(t.l[1]), source: 'Kraken' };
+    } catch (_) { // 备用 2：Coinbase（仅现价）
       const d = await fetchJSON('https://api.coinbase.com/v2/prices/BTC-USD/spot');
       const price = Number(d.data.amount); if (!Number.isFinite(price)) throw new Error('bad');
       return { price, change24h: null, high24h: null, low24h: null, source: 'Coinbase' };
-    } catch (_) {
-      const d = await fetchJSON('https://api.kraken.com/0/public/Ticker?pair=XBTUSD');
-      const t = Object.values(d.result || {})[0]; const price = Number(t.c[0]), open = Number(t.o);
-      return { price, change24h: open ? (price - open) / open * 100 : null, high24h: Number(t.h[1]), low24h: Number(t.l[1]), source: 'Kraken' };
     }
   }
 }
