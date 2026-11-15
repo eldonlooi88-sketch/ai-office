@@ -108,7 +108,8 @@ curl -X POST "$OFFICE_URL/api/report" \
 
 ## 在线地址（Render）
 - 公网地址：**https://ai-office-vk1v.onrender.com**
-- 代码仓库：https://github.com/eldonlooi88-sketch/ai-office （推送到 `main` 会自动重新部署）
+- 代码仓库：https://github.com/eldonlooi88-sketch/ai-office
+- 自动部署：服务是通过公开仓库 URL 创建的，未连接 Render 的 GitHub App，所以推送后**不会自动部署**。可在 Render 控制台手动 Deploy，或在 GitHub 上安装 Render GitHub App 并在服务 Settings 里关联仓库后即可推送即部署。
 - Render 服务：ai-office（Free 套餐，新加坡区），构建 `npm ci --omit=dev`，启动 `node server.js`，健康检查 `/healthz`
 - 环境变量：
   - `OFFICE_TOKEN_HASHES`：各 Bot Token 的 SHA-256 哈希 JSON（不是明文 Token）。在本机执行 `node bin/office-admin.js env-hashes` 生成，粘贴到 Render → Environment。
