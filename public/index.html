@@ -30,6 +30,30 @@
   <div class="legend" id="legend"></div>
   <div class="panel-foot"><span id="conn">连接中…</span> · <span id="updated"></span></div>
 </aside>
+<aside id="chat" hidden aria-label="对话">
+  <div class="chat-head">
+    <span class="dot" id="chatDot"></span>
+    <div class="chat-who"><b id="chatName"></b><span id="chatRole" class="brole"></span><div id="chatStatus" class="chat-status"></div></div>
+    <button id="chatLogout" type="button" class="ghost" title="在本设备退出老板登录" hidden>退出</button>
+    <button id="chatClose" type="button" class="ghost icon" title="关闭" aria-label="关闭">✕</button>
+  </div>
+  <div id="chatLogin" class="chat-login" hidden>
+    <div class="lock">🔒</div>
+    <p>对话仅限老板使用，请输入老板口令。<br><small>口令只保存在这台设备上，可随时“退出”。</small></p>
+    <input id="chatPass" type="password" autocomplete="current-password" placeholder="老板口令" maxlength="200" spellcheck="false" autocapitalize="off">
+    <button id="chatLoginBtn" type="button" class="primary">进入对话</button>
+    <div id="chatLoginErr" class="err" role="alert"></div>
+  </div>
+  <div id="chatMain" class="chat-main" hidden>
+    <div class="chat-hint">💡 回复不是即时的：员工会定时查看留言，通常几分钟内回复。</div>
+    <ol id="chatList" class="chat-list" aria-live="polite"></ol>
+    <div class="chat-input">
+      <textarea id="chatText" rows="1" maxlength="500" placeholder="给 TA 留言或派任务…"></textarea>
+      <button id="chatSend" type="button" class="primary">发送</button>
+    </div>
+    <div class="chat-foot"><span id="chatCount">0/500</span><span id="chatPoll"></span></div>
+  </div>
+</aside>
 <div id="toast" hidden></div>
 <script type="module" src="app.js"></script>
 </body>

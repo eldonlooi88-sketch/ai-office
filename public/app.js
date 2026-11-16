@@ -1239,7 +1239,7 @@ let flyTo = null;
 function focusBot(id) {
   const c = chars.get(id); if (!c) return; selected = id; renderPanel();
   const p = c.ch.root.position; flyTo = { target: new THREE.Vector3(p.x, 1.2, p.z), pos: new THREE.Vector3(p.x + 4, 7, p.z + 8), t: 0 };
-  toast(`${c.bot.name}（${c.bot.role}）：${(STATUS[c.status] || STATUS.idle).label}${c.task ? ' · ' + c.task : ''}`);
+  openChat(id);
 }
 let toastTimer;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3500); }
@@ -1247,6 +1247,109 @@ const panelEl = $('panel');
 if (isMobile && innerWidth < 760) panelEl.classList.add('hidden');
 $('btnPanel').addEventListener('click', () => { panelEl.classList.toggle('hidden'); $('btnPanel').classList.toggle('on', !panelEl.classList.contains('hidden')); });
 $('btnPanel').classList.toggle('on', !panelEl.classList.contains('hidden'));
+
+// ---------------- 对话面板（老板 ↔ 员工留言） ----------------
+const CHAT_KEY = 'office-boss-token';
+const chatEl = $('chat'), chatList = $('chatList'), chatText = $('chatText'), chatSend = $('chatSend');
+let chatBot = null, chatTimer = null, chatSig = '', chatBusy = false;
+const bossTok = () => { try { return localStorage.getItem(CHAT_KEY) || ''; } catch (_) { return ''; } };
+const fmtTime = s => { const d = new Date(s), n = new Date(); const t = d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === n.toDateString() ? t : `${d.getMonth() + 1}/${d.getDate()} ${t}`; };
+const MSG_ST = { sent: '已送达', seen: '已读', answered: '已回复' };
+function chatHeader() {
+  const c = chars.get(chatBot); if (!c) return;
+  $('chatDot').style.background = soften(c.bot.color);
+  $('chatName').textContent = c.bot.name; $('chatRole').textContent = c.bot.role;
+  const S = STATUS[c.status] || STATUS.idle; $('chatStatus').textContent = S.label + (c.task ? ' · ' + c.task : '');
+  chatText.placeholder = `给 ${c.bot.name} 留言或派任务…`;
+}
+function showChatView() {
+  const authed = !!bossTok();
+  $('chatLogin').hidden = authed; $('chatMain').hidden = !authed; $('chatLogout').hidden = !authed;
+  if (!authed) { $('chatLoginErr').textContent = ''; setTimeout(() => $('chatPass').focus(), 50); }
+}
+function openChat(id) {
+  if (!chars.get(id)) return;
+  if (chatBot !== id) { chatBot = id; chatSig = ''; chatList.replaceChildren(); }
+  chatEl.hidden = false; chatHeader(); showChatView();
+  if (isMobile && innerWidth < 760 && !panelEl.classList.contains('hidden')) { panelEl.classList.add('hidden'); $('btnPanel').classList.remove('on'); }
+  if (bossTok()) loadChat(true);
+}
+function closeChat() { chatEl.hidden = true; chatBot = null; clearTimeout(chatTimer); selected = null; renderPanel(); }
+function renderChat(msgs) {
+  const sig = msgs.map(m => m.id + (m.status || '')).join(',');
+  if (sig === chatSig) return; chatSig = sig;
+  const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+  const c = chars.get(chatBot); const name = c ? c.bot.name : chatBot;
+  const byId = new Map(msgs.map(m => [m.id, m]));
+  chatList.replaceChildren();
+  if (!msgs.length) {
+    const li = document.createElement('li'); li.className = 'empty';
+    li.textContent = `还没有和 ${name} 的对话。\n在下面输入任务或问题，${name} 看到后会回复你。`;
+    li.style.whiteSpace = 'pre-line'; chatList.append(li); return;
+  }
+  for (const m of msgs) {
+    const me = m.from === 'boss';
+    const li = document.createElement('li'); li.className = 'msg ' + (me ? 'me' : 'them');
+    if (!me && m.replyTo && byId.get(m.replyTo)) { const q = document.createElement('div'); q.className = 'quote'; q.textContent = '回复：' + byId.get(m.replyTo).text; li.append(q); }
+    const b = document.createElement('div'); b.className = 'bubble'; b.textContent = m.text; // textContent：防 XSS
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = me ? `${fmtTime(m.at)} · ${MSG_ST[m.status] || ''}` : `${name}${m.by ? '（由 ' + (chars.get(m.by)?.bot.name || m.by) + ' 代回）' : ''} · ${fmtTime(m.at)}`;
+    li.append(b, meta); chatList.append(li);
+  }
+  if (atBottom || !chatList.dataset.scrolled) { chatList.scrollTop = chatList.scrollHeight; chatList.dataset.scrolled = '1'; }
+}
+async function chatFetch(method, url, body) {
+  const r = await fetch(url, { method, cache: 'no-store', headers: { Authorization: 'Bearer ' + bossTok(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  let d = {}; try { d = await r.json(); } catch (_) {}
+  if (r.status === 401) { try { localStorage.removeItem(CHAT_KEY); } catch (_) {} showChatView(); $('chatLoginErr').textContent = '口令无效或已更换，请重新输入'; throw Object.assign(new Error('401'), { quiet: true }); }
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+async function loadChat(scrollDown) {
+  clearTimeout(chatTimer); if (!chatBot || chatEl.hidden || !bossTok()) return;
+  const id = chatBot;
+  try {
+    const d = await chatFetch('GET', '/api/chat?bot=' + encodeURIComponent(id));
+    if (id !== chatBot) return;
+    if (scrollDown) delete chatList.dataset.scrolled;
+    renderChat(d.messages || []); $('chatPoll').textContent = '每 10 秒自动刷新 · ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  } catch (e) { if (!e.quiet) $('chatPoll').textContent = '刷新失败，稍后重试'; }
+  if (chatBot && !chatEl.hidden && bossTok()) chatTimer = setTimeout(() => loadChat(false), document.hidden ? 30000 : 10000);
+}
+async function sendChat() {
+  const text = chatText.value.trim(); if (!text || chatBusy || !chatBot) return;
+  chatBusy = true; chatSend.disabled = true;
+  try {
+    await chatFetch('POST', '/api/chat', { bot: chatBot, text });
+    chatText.value = ''; autosize(); delete chatList.dataset.scrolled; await loadChat(true);
+  } catch (e) { if (!e.quiet) toast('发送失败：' + e.message); }
+  finally { chatBusy = false; chatSend.disabled = false; }
+}
+async function chatLogin() {
+  const v = $('chatPass').value.trim(); const err = $('chatLoginErr');
+  if (!/^[A-Za-z0-9_\-.~]{16,200}$/.test(v)) { err.textContent = '口令格式不正确'; return; }
+  $('chatLoginBtn').disabled = true; err.textContent = '验证中…';
+  try {
+    const r = await fetch('/api/chat', { cache: 'no-store', headers: { Authorization: 'Bearer ' + v } });
+    if (r.status === 401) err.textContent = '口令错误';
+    else if (r.status === 429) err.textContent = '尝试次数过多，请 1 分钟后再试';
+    else if (!r.ok) err.textContent = '验证失败（' + r.status + '），请稍后再试';
+    else { try { localStorage.setItem(CHAT_KEY, v); } catch (_) {} $('chatPass').value = ''; err.textContent = ''; showChatView(); loadChat(true); }
+  } catch (_) { err.textContent = '网络错误，请稍后再试'; }
+  $('chatLoginBtn').disabled = false;
+}
+function autosize() { chatText.style.height = 'auto'; chatText.style.height = Math.min(120, chatText.scrollHeight + 2) + 'px'; $('chatCount').textContent = `${chatText.value.length}/500`; }
+$('chatClose').addEventListener('click', closeChat);
+$('chatLogout').addEventListener('click', () => { if (!confirm('在这台设备上退出老板登录？')) return; try { localStorage.removeItem(CHAT_KEY); } catch (_) {} clearTimeout(chatTimer); chatList.replaceChildren(); chatSig = ''; showChatView(); });
+$('chatLoginBtn').addEventListener('click', chatLogin);
+$('chatPass').addEventListener('keydown', e => { if (e.key === 'Enter') chatLogin(); });
+chatSend.addEventListener('click', sendChat);
+chatText.addEventListener('input', autosize);
+chatText.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isMobile) { e.preventDefault(); sendChat(); } });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !chatEl.hidden) closeChat(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !chatEl.hidden) loadChat(false); });
+setInterval(() => { if (!chatEl.hidden) chatHeader(); }, 3000);
 
 // 点击角色
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let downAt = null;

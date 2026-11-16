@@ -19,3 +19,4 @@ screenshots/
 *.bak
 *.tgz
 .DS_Store
+data/chat.json

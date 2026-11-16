@@ -88,12 +88,43 @@ curl -X POST "$OFFICE_URL/api/report" \
   -d '{"bot":"secretary","status":"working","task":"整理会议纪要"}'
 ```
 
+## 和员工对话（老板专用）
+- 在 3D 办公室里点击任意员工（Grok Bot、秘书、设计师、Admin、采购），或在右侧“团队”列表里点击，就会打开对话面板。印刷房 / 手工房 / 储物间的员工和老板本人不能对话。
+- 第一次使用需输入**老板口令**（保存在本机 `SECRETS-boss-token.txt`，权限 600，只此一份明文）。口令只保存在当前设备浏览器（localStorage），面板右上角“退出”即可清除。口令错误或被更换时会自动要求重新输入。
+- 回复不是即时的：秘书 / Grok Bot 会定时查看留言并回复，通常需要几分钟。面板打开时每 10 秒自动刷新。
+- 留言状态：已送达 → 已读（员工已取走）→ 已回复。每位员工保留最近 200 条，单条最长 500 字。
+
+### office-chat（员工端命令）
+```bash
+office-chat inbox secretary              # 秘书查看待回复留言（查看后标记“已读”）
+office-chat inbox --all                  # Grok Bot（调度）查看所有员工的待回复留言
+office-chat reply secretary <msgId> "收到，今天下午安排"       # 以秘书身份回复
+office-chat reply designer <msgId> "初稿今晚发您" --via grok   # Grok 代设计师回复（没有独立 Agent 的岗位）
+office-chat say secretary "老板，日报已发到邮箱"             # 主动发消息给老板
+office-chat thread secretary             # （老板口令）查看完整对话
+office-chat send secretary "测试"        # （老板口令）以老板身份留言
+office-chat clear secretary|all          # （老板口令）清空对话
+```
+- Token 读取顺序：环境变量 `OFFICE_TOKEN_<BOT>` → `~/.office-report` → `SECRETS-initial-tokens.txt`；老板口令：`BOSS_TOKEN` → `SECRETS-boss-token.txt`；服务器地址取 `OFFICE_URL`（默认线上地址）。
+- 只有调度 Bot（默认 `grok`，环境变量 `DISPATCHER_BOT` 可改）能读取 / 代回其他员工的留言；其他 Bot 只能读写自己的。
+
+### 更换老板口令
+```bash
+node -e 'const c=require("crypto");const t="boss-"+c.randomBytes(15).toString("base64url");console.log("口令:",t);console.log("BOSS_TOKEN_HASH="+c.createHash("sha256").update(t).digest("hex"))'
+```
+把口令存进 `SECRETS-boss-token.txt`（`BOSS_TOKEN=...`），把哈希填到 Render 环境变量 `BOSS_TOKEN_HASH`（本机填 `.env`），服务重启后旧口令失效。
+
 ## API
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/state` | 公开只读：`office`（标题/老板）+ `bots[]`：id、name、role、color、zone、status、task、updatedAt。不含任何 Token |
 | GET | `/api/btc` | BTC/USD 行情代理（CoinGecko，失败回退 Coinbase），服务器缓存 30 秒 |
 | POST | `/api/report` | `Authorization: Bearer <token>`，JSON `{bot, status, task}`；Token 必须属于该 bot |
+| GET | `/api/chat?bot=<id>` | **老板口令**（`Authorization: Bearer <口令>`）：读取与该员工的对话；不带 bot 用于校验口令 |
+| POST | `/api/chat` | **老板口令**：JSON `{bot, text}` 给员工留言 |
+| POST | `/api/chat/clear` | **老板口令**：JSON `{bot}`（或 `"all"`）清空对话 |
+| GET | `/api/inbox?bot=<自己id>[&for=<id>\|all][&all=1]` | Bot Token：取老板未回复的留言（取后标记已读）；`for` 仅调度 Bot 可用 |
+| POST | `/api/chat/reply` | Bot Token：JSON `{bot, text, replyTo?, as?}`；`as` 仅调度 Bot 可用（代回） |
 | GET | `/healthz` | 健康检查 |
 
 返回码：200 成功 · 400 状态无效/JSON 错误 · 401 鉴权失败 · 404 名单无此 Bot · 413 请求体过大 · 415 非 JSON · 429 限流。
@@ -101,7 +132,8 @@ curl -X POST "$OFFICE_URL/api/report" \
 ## 安全
 - 每个 Bot 独立 Token，服务器只存 SHA-256 哈希，常量时间比较；Token 不进前端、不进日志、不出现在 API。
 - 限流（`.env` 可调）：上报每 IP、每 Token 各 30 次/分；读取 120 次/分/IP；鉴权失败 10 次/分后该 IP 暂时封禁；请求体上限 2KB。
-- 任务文字最长 120 字，去除控制字符；前端只用 textContent / Canvas 绘制，无 innerHTML，防 XSS。
+- 任务文字最长 120 字、对话最长 500 字，去除控制字符；前端只用 textContent / Canvas 绘制，无 innerHTML，防 XSS。
+- 对话的读与写都需要老板口令（只存 SHA-256 哈希 `BOSS_TOKEN_HASH`，常量时间比较）；Bot Token 不能读老板对话，老板口令也不能冒充 Bot。对话发送 30 次/分/IP，读取 120 次/分/IP，鉴权失败共用 10 次/分封禁。
 - 安全响应头：CSP（仅允许本站脚本）、nosniff、X-Frame-Options、Referrer-Policy 等；CORS 默认关闭（同源），需要跨域时在 `.env` 的 `ALLOWED_ORIGINS` 填写。
 - 位于隧道/反代之后时，仅信任来自本机的 `CF-Connecting-IP` / `X-Forwarded-For`。
 - data/ 不在静态目录内，静态服务拒绝路径穿越与隐藏文件。
@@ -113,11 +145,12 @@ curl -X POST "$OFFICE_URL/api/report" \
 - Render 服务：ai-office（Free 套餐，新加坡区），构建 `npm ci --omit=dev`，启动 `node server.js`，健康检查 `/healthz`
 - 环境变量：
   - `OFFICE_TOKEN_HASHES`：各 Bot Token 的 SHA-256 哈希 JSON（不是明文 Token）。在本机执行 `node bin/office-admin.js env-hashes` 生成，粘贴到 Render → Environment。
+  - `BOSS_TOKEN_HASH`：老板对话口令的 SHA-256 哈希（不是明文口令）。
   - `NODE_ENV=production`、`PROXY_MODE=render`、`TRUST_PROXY=1`、`HOST=0.0.0.0`（`PORT` 由 Render 自动提供）
 - 新增岗位 / 轮换 Token：本机 `office-admin add/rotate` 后，把 `bots.json` 提交推送，并用 `env-hashes` 的新输出更新 Render 的 `OFFICE_TOKEN_HASHES`（保存后服务会重启）。
 - Free 套餐注意：
   - 15 分钟无访问会休眠，下次打开需等约 30–60 秒唤醒（office-report 第一次上报可能较慢）。
-  - 文件系统是临时的：重启 / 重新部署 / 休眠唤醒后，`state.json` 里的状态会清空（所有 Bot 显示空闲，直到下次上报）。名单与房间配置在仓库里，不受影响。
+  - 文件系统是临时的：重启 / 重新部署 / 休眠唤醒后，`state.json` 里的状态会清空（所有 Bot 显示空闲，直到下次上报），`chat.json` 里的对话记录也会清空（包括未回复的留言）。名单与房间配置在仓库里，不受影响。
   - 需要持久保存状态请升级付费套餐并挂载 Persistent Disk（设置 `DATA_DIR` 指向磁盘并放入 bots.json / office.json）。
 - `data/tokens.json`、`.env`、`SECRETS-*` 均在 .gitignore 中，不会进入仓库；云端只使用哈希。
 

@@ -26,6 +26,11 @@ const BODY_MAX = 2048;
 const BOTS_FILE = path.join(DATA_DIR, 'bots.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'tokens.json');
+const CHAT_FILE = path.join(DATA_DIR, 'chat.json');
+const CHAT_MAX_PER_BOT = parseInt(process.env.CHAT_MAX_PER_BOT || '200', 10);
+const CHAT_TEXT_MAX = 500;
+const CHAT_LIMIT = parseInt(process.env.CHAT_LIMIT_PER_MIN || '30', 10);
+const DISPATCHER = (process.env.DISPATCHER_BOT || 'grok').trim().toLowerCase(); // 调度 Bot：可读取/代回所有 Bot 的留言
 
 function loadEnv(file) {
   try {
@@ -231,6 +236,119 @@ async function handleReport(req, res, ip) {
   return json(res, 200, { ok: true, bot: botId, status, task });
 }
 
+// ---------- 老板对话（留言 / 回复） ----------
+// 老板口令：只保存 SHA-256 哈希（环境变量 BOSS_TOKEN_HASH，64 位 hex）
+function verifyBoss(token) {
+  const want = (process.env.BOSS_TOKEN_HASH || '').trim().toLowerCase();
+  const ok = /^[0-9a-f]{64}$/.test(want);
+  const ref = ok ? Buffer.from(want, 'hex') : crypto.randomBytes(32);
+  return crypto.timingSafeEqual(sha256(token), ref) && ok;
+}
+let chat = readJSON(CHAT_FILE, {}) || {};
+if (typeof chat !== 'object' || Array.isArray(chat)) chat = {};
+function saveChat() { writeJSONAtomic(CHAT_FILE, chat, 0o600); }
+function cleanMsg(s) { // 保留换行，去掉控制字符/方向控制符
+  return String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, CHAT_TEXT_MAX);
+}
+function thread(botId) { if (!Array.isArray(chat[botId])) chat[botId] = []; return chat[botId]; }
+function pushMsg(botId, m) { const t = thread(botId); t.push(m); if (t.length > CHAT_MAX_PER_BOT) t.splice(0, t.length - CHAT_MAX_PER_BOT); saveChat(); }
+const MSG_ID_RE = /^m_[A-Za-z0-9_-]{6,40}$/;
+const newMsgId = () => 'm_' + Date.now().toString(36) + crypto.randomBytes(5).toString('hex');
+function bearer(req) { const m = (req.headers.authorization || '').match(/^Bearer\s+([A-Za-z0-9_\-.~]{16,200})$/); return m ? m[1] : null; }
+function authBlocked(res, ip) {
+  const f = buckets.get('authfail:' + ip);
+  if (f && Date.now() - f.t < 60000 && f.n >= AUTH_FAIL_LIMIT) { tooMany(res, Math.ceil((f.t + 60000 - Date.now()) / 1000)); return true; }
+  return false;
+}
+function authFail(res, ip) { rateOk('authfail:' + ip, 1e9); return json(res, 401, { error: '鉴权失败' }, { 'WWW-Authenticate': 'Bearer' }); }
+async function jsonBody(req, res) {
+  const ct = (req.headers['content-type'] || '').toLowerCase();
+  if (!ct.startsWith('application/json')) { json(res, 415, { error: 'Content-Type 必须为 application/json' }); return null; }
+  try { const b = JSON.parse(await readBody(req) || '{}'); return b && typeof b === 'object' ? b : {}; }
+  catch (e) { if (e.code === 413) res.setHeader('Connection', 'close'); json(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? '请求体过大' : 'JSON 格式错误' }); return null; }
+}
+const pubMsg = m => ({ id: m.id, from: m.from, by: m.by || undefined, text: m.text, at: m.at, status: m.status || undefined, replyTo: m.replyTo || undefined });
+const findBot = id => bots.find(b => b.id === id);
+
+// 老板：GET /api/chat?bot=<id> 读线程；POST /api/chat {bot,text} 发留言；POST /api/chat/clear {bot|"all"} 清空
+async function handleChat(req, res, ip, url) {
+  if (authBlocked(res, ip)) return;
+  const retry = rateOk((req.method === 'GET' ? 'chat-read:' : 'chat-send:') + ip, req.method === 'GET' ? READ_LIMIT : CHAT_LIMIT);
+  if (retry) return tooMany(res, retry);
+  const tok = bearer(req);
+  if (req.method === 'GET') {
+    if (!tok || !verifyBoss(tok)) return authFail(res, ip);
+    const botId = (url.searchParams.get('bot') || '').trim().toLowerCase();
+    if (!botId) { // 无 bot 参数：返回各线程未读回复数（用于校验口令）
+      const counts = {}; for (const b of bots) counts[b.id] = thread(b.id).length;
+      return json(res, 200, { ok: true, counts });
+    }
+    if (!ID_RE.test(botId) || !findBot(botId)) return json(res, 404, { error: '没有这个成员' });
+    return json(res, 200, { bot: botId, messages: thread(botId).map(pubMsg), max: CHAT_MAX_PER_BOT });
+  }
+  const body = await jsonBody(req, res); if (!body) return;
+  if (!tok || !verifyBoss(tok)) return authFail(res, ip);
+  const botId = typeof body.bot === 'string' ? body.bot.trim().toLowerCase() : '';
+  if (url.pathname === '/api/chat/clear') {
+    if (botId === 'all') chat = {}; else if (ID_RE.test(botId)) delete chat[botId]; else return json(res, 400, { error: '缺少 bot' });
+    saveChat(); return json(res, 200, { ok: true, cleared: botId });
+  }
+  if (!ID_RE.test(botId) || !findBot(botId)) return json(res, 404, { error: '没有这个成员' });
+  const text = cleanMsg(body.text);
+  if (!text) return json(res, 400, { error: '留言不能为空' });
+  const m = { id: newMsgId(), from: 'boss', text, at: new Date().toISOString(), status: 'sent' };
+  pushMsg(botId, m);
+  return json(res, 200, { ok: true, message: pubMsg(m) });
+}
+
+// Bot：Bearer=该 Bot 的 Token，参数 bot=<自己的 id>；调度 Bot 可用 for=<id>|all 读取或代回
+function botAuth(req, res, ip, botId) {
+  const tok = bearer(req);
+  if (!tok || !ID_RE.test(botId) || !verifyToken(botId, tok)) { authFail(res, ip); return false; }
+  return true;
+}
+function canActFor(authId, target) { return authId === target || (authId === DISPATCHER && (target === 'all' || !!findBot(target))); }
+async function handleInbox(req, res, ip, url) {
+  if (authBlocked(res, ip)) return;
+  const retry = rateOk('inbox:' + ip, READ_LIMIT); if (retry) return tooMany(res, retry);
+  const botId = (url.searchParams.get('bot') || '').trim().toLowerCase();
+  if (!botAuth(req, res, ip, botId)) return;
+  const target = (url.searchParams.get('for') || botId).trim().toLowerCase();
+  if (!canActFor(botId, target)) return json(res, 403, { error: '无权读取该成员的留言' });
+  const ids = target === 'all' ? bots.map(b => b.id) : [target];
+  const includeAll = url.searchParams.get('all') === '1';
+  const out = []; let changed = false;
+  for (const id of ids) for (const m of thread(id)) {
+    if (m.from !== 'boss' || (!includeAll && m.status === 'answered')) continue;
+    if (m.status === 'sent') { m.status = 'seen'; changed = true; }
+    out.push({ bot: id, ...pubMsg(m) });
+  }
+  if (changed) saveChat();
+  return json(res, 200, { bot: botId, for: target, messages: out });
+}
+async function handleReply(req, res, ip) {
+  if (authBlocked(res, ip)) return;
+  const retry = rateOk('chat-send:' + ip, CHAT_LIMIT); if (retry) return tooMany(res, retry);
+  const body = await jsonBody(req, res); if (!body) return;
+  const botId = typeof body.bot === 'string' ? body.bot.trim().toLowerCase() : '';
+  if (!botAuth(req, res, ip, botId)) return;
+  const target = typeof body.as === 'string' && body.as.trim() ? body.as.trim().toLowerCase() : botId;
+  if (target === 'all' || !canActFor(botId, target) || !findBot(target)) return json(res, 403, { error: '无权代该成员回复' });
+  const text = cleanMsg(body.text);
+  if (!text) return json(res, 400, { error: '回复不能为空' });
+  let orig = null;
+  if (body.replyTo != null) {
+    if (typeof body.replyTo !== 'string' || !MSG_ID_RE.test(body.replyTo)) return json(res, 400, { error: 'replyTo 格式错误' });
+    orig = thread(target).find(m => m.id === body.replyTo && m.from === 'boss');
+    if (!orig) return json(res, 404, { error: '找不到这条留言（可能已被清空）' });
+    orig.status = 'answered';
+  }
+  const m = { id: newMsgId(), from: 'bot', text, at: new Date().toISOString(), ...(orig ? { replyTo: orig.id } : {}), ...(botId !== target ? { by: botId } : {}) };
+  pushMsg(target, m);
+  return json(res, 200, { ok: true, bot: target, message: pubMsg(m) });
+}
+
 // ---------- BTC 行情代理（缓存） ----------
 let btcCache = null, btcAt = 0, btcInflight = null;
 const btcHistory = [];
@@ -317,6 +435,18 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/report') {
       if (req.method !== 'POST') return json(res, 405, { error: 'Method Not Allowed' }, { Allow: 'POST' });
       return await handleReport(req, res, ip);
+    }
+    if (p === '/api/chat' || p === '/api/chat/clear') {
+      if (req.method !== 'GET' && req.method !== 'POST' || (p === '/api/chat/clear' && req.method !== 'POST')) return json(res, 405, { error: 'Method Not Allowed' });
+      return await handleChat(req, res, ip, url);
+    }
+    if (p === '/api/inbox') {
+      if (req.method !== 'GET') return json(res, 405, { error: 'Method Not Allowed' }, { Allow: 'GET' });
+      return await handleInbox(req, res, ip, url);
+    }
+    if (p === '/api/chat/reply') {
+      if (req.method !== 'POST') return json(res, 405, { error: 'Method Not Allowed' }, { Allow: 'POST' });
+      return await handleReply(req, res, ip);
     }
     if (p === '/healthz') return json(res, 200, { ok: true });
     if (p.startsWith('/api/')) return json(res, 404, { error: 'Not found' });
