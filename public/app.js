@@ -1328,7 +1328,7 @@ async function sendChat() {
 }
 async function chatLogin() {
   const v = $('chatPass').value.trim(); const err = $('chatLoginErr');
-  if (!/^[A-Za-z0-9_\-.~]{16,200}$/.test(v)) { err.textContent = '口令格式不正确'; return; }
+  if (!/^[A-Za-z0-9_\-.~]{12,200}$/.test(v)) { err.textContent = '口令格式不正确'; return; }
   $('chatLoginBtn').disabled = true; err.textContent = '验证中…';
   try {
     const r = await fetch('/api/chat', { cache: 'no-store', headers: { Authorization: 'Bearer ' + v } });

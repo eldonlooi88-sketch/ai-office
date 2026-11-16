@@ -255,7 +255,8 @@ function thread(botId) { if (!Array.isArray(chat[botId])) chat[botId] = []; retu
 function pushMsg(botId, m) { const t = thread(botId); t.push(m); if (t.length > CHAT_MAX_PER_BOT) t.splice(0, t.length - CHAT_MAX_PER_BOT); saveChat(); }
 const MSG_ID_RE = /^m_[A-Za-z0-9_-]{6,40}$/;
 const newMsgId = () => 'm_' + Date.now().toString(36) + crypto.randomBytes(5).toString('hex');
-function bearer(req) { const m = (req.headers.authorization || '').match(/^Bearer\s+([A-Za-z0-9_\-.~]{16,200})$/); return m ? m[1] : null; }
+// Bot Token 至少 16 位；老板口令（人工设置）至少 12 位
+function bearer(req, min = 16) { const m = (req.headers.authorization || '').match(/^Bearer\s+([A-Za-z0-9_\-.~]+)$/); return m && m[1].length >= min && m[1].length <= 200 ? m[1] : null; }
 function authBlocked(res, ip) {
   const f = buckets.get('authfail:' + ip);
   if (f && Date.now() - f.t < 60000 && f.n >= AUTH_FAIL_LIMIT) { tooMany(res, Math.ceil((f.t + 60000 - Date.now()) / 1000)); return true; }
@@ -276,7 +277,7 @@ async function handleChat(req, res, ip, url) {
   if (authBlocked(res, ip)) return;
   const retry = rateOk((req.method === 'GET' ? 'chat-read:' : 'chat-send:') + ip, req.method === 'GET' ? READ_LIMIT : CHAT_LIMIT);
   if (retry) return tooMany(res, retry);
-  const tok = bearer(req);
+  const tok = bearer(req, 12);
   if (req.method === 'GET') {
     if (!tok || !verifyBoss(tok)) return authFail(res, ip);
     const botId = (url.searchParams.get('bot') || '').trim().toLowerCase();
