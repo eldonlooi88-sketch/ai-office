@@ -272,6 +272,36 @@ async function jsonBody(req, res) {
 const pubMsg = m => ({ id: m.id, from: m.from, by: m.by || undefined, text: m.text, at: m.at, status: m.status || undefined, replyTo: m.replyTo || undefined });
 const findBot = id => bots.find(b => b.id === id);
 
+// ---------- 新留言即时通知（Webhook，可选） ----------
+// CHAT_WEBHOOK_URL + CHAT_WEBHOOK_KEY 都设置时启用；20 秒内多条留言合并为一次通知；不含留言内容
+// CHAT_WEBHOOK_AUTH：bearer（默认，Authorization: Bearer <key>）| raw（Authorization: <key>）| x-webhook-key（X-Webhook-Key: <key>）
+const HOOK_DEBOUNCE_MS = parseInt(process.env.CHAT_WEBHOOK_DEBOUNCE_SEC || '20', 10) * 1000;
+let hookTimer = null, hookPending = [];
+function hookHeaders(key) {
+  const style = (process.env.CHAT_WEBHOOK_AUTH || 'bearer').toLowerCase();
+  if (style === 'raw') return { Authorization: key };
+  if (style === 'x-webhook-key') return { 'X-Webhook-Key': key };
+  return { Authorization: 'Bearer ' + key };
+}
+function notifyChat(botId, msgId) {
+  const url = process.env.CHAT_WEBHOOK_URL, key = process.env.CHAT_WEBHOOK_KEY;
+  if (!url || !key || !/^https?:\/\//i.test(url)) return;
+  hookPending.push({ bot: botId, msgId });
+  if (hookTimer) return; // 已在等待窗口内：合并
+  hookTimer = setTimeout(async () => {
+    const batch = hookPending.splice(0, 50); hookPending = []; hookTimer = null;
+    const first = batch[0];
+    const body = JSON.stringify({ event: 'office-chat', bot: first.bot, msgId: first.msgId, count: batch.length,
+      bots: [...new Set(batch.map(x => x.bot))], msgIds: batch.map(x => x.msgId), at: new Date().toISOString() });
+    try {
+      const r = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5000), headers: { 'Content-Type': 'application/json', ...hookHeaders(key) }, body });
+      console.log(`[webhook] office-chat 通知 ${batch.length} 条 -> HTTP ${r.status}`);
+      r.body?.cancel?.().catch(() => {});
+    } catch (e) { console.log(`[webhook] office-chat 通知失败：${e.name === 'TimeoutError' ? '超时' : '网络错误'}`); }
+  }, HOOK_DEBOUNCE_MS);
+  hookTimer.unref?.();
+}
+
 // 老板：GET /api/chat?bot=<id> 读线程；POST /api/chat {bot,text} 发留言；POST /api/chat/clear {bot|"all"} 清空
 async function handleChat(req, res, ip, url) {
   if (authBlocked(res, ip)) return;
@@ -300,6 +330,7 @@ async function handleChat(req, res, ip, url) {
   if (!text) return json(res, 400, { error: '留言不能为空' });
   const m = { id: newMsgId(), from: 'boss', text, at: new Date().toISOString(), status: 'sent' };
   pushMsg(botId, m);
+  try { notifyChat(botId, m.id); } catch (_) {}
   return json(res, 200, { ok: true, message: pubMsg(m) });
 }
 

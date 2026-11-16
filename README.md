@@ -94,6 +94,12 @@ curl -X POST "$OFFICE_URL/api/report" \
 - 回复不是即时的：秘书 / Grok Bot 会定时查看留言并回复，通常需要几分钟。面板打开时每 10 秒自动刷新。
 - 留言状态：已送达 → 已读（员工已取走）→ 已回复。每位员工保留最近 200 条，单条最长 500 字。
 
+### 新留言即时通知（Webhook，可选）
+- 设置 Render 环境变量 `CHAT_WEBHOOK_URL` 和 `CHAT_WEBHOOK_KEY` 后，老板每发一条留言，服务器会通知 Grok Bot 的 Webhook 例程，员工就能马上处理，不用等定时查看。
+- 只发送 `{"event":"office-chat","bot","msgId","count","bots","msgIds","at"}`，**不含留言内容和任何口令**。20 秒内的多条留言合并成一次通知（`CHAT_WEBHOOK_DEBOUNCE_SEC` 可改）。
+- 鉴权头默认 `Authorization: Bearer <key>`；`CHAT_WEBHOOK_AUTH=raw` 改为 `Authorization: <key>`，`=x-webhook-key` 改为 `X-Webhook-Key: <key>`。
+- 超时 5 秒，失败不影响发送；日志只记录状态码（`[webhook] … -> HTTP 202`）。两个变量没设置时不通知。
+
 ### office-chat（员工端命令）
 ```bash
 office-chat inbox secretary              # 秘书查看待回复留言（查看后标记“已读”）
@@ -145,6 +151,7 @@ node -e 'const c=require("crypto");const t="boss-"+c.randomBytes(15).toString("b
 - Render 服务：ai-office（Free 套餐，新加坡区），构建 `npm ci --omit=dev`，启动 `node server.js`，健康检查 `/healthz`
 - 环境变量：
   - `OFFICE_TOKEN_HASHES`：各 Bot Token 的 SHA-256 哈希 JSON（不是明文 Token）。在本机执行 `node bin/office-admin.js env-hashes` 生成，粘贴到 Render → Environment。
+  - `CHAT_WEBHOOK_URL` / `CHAT_WEBHOOK_KEY`（可选）：新留言即时通知的 Webhook 地址和密钥。
   - `BOSS_TOKEN_HASH`：老板对话口令的 SHA-256 哈希（不是明文口令）。
   - `NODE_ENV=production`、`PROXY_MODE=render`、`TRUST_PROXY=1`、`HOST=0.0.0.0`（`PORT` 由 Render 自动提供）
 - 新增岗位 / 轮换 Token：本机 `office-admin add/rotate` 后，把 `bots.json` 提交推送，并用 `env-hashes` 的新输出更新 Render 的 `OFFICE_TOKEN_HASHES`（保存后服务会重启）。
